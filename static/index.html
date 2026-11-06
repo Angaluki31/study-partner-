@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Study Partner</title>
   <style>
+    #modes { display: flex; flex-wrap: wrap; gap: 6px; }
+#modes button { margin-top: 8px; }
+.quiz { border: 1px solid #ccc; border-radius: 6px; padding: 10px; margin: 8px 0; }
+.opt { display: block; width: 100%; text-align: left; margin-top: 8px; }
+.correct { background: #c8f7c5; }
+.wrong { background: #f7c5c5; }
     [hidden] { display: none !important; }
     body { font-family: sans-serif; max-width: 700px; margin: 0 auto; padding: 16px; }
     label { display: block; margin-top: 14px; font-weight: bold; }
@@ -46,6 +52,12 @@
       <strong id="info"></strong>
       <button id="change">Change topic</button>
     </div>
+    <div id="modes">
+  <button data-prompt="Explain this topic again in simpler words, with a real-life example.">Explain simply</button>
+  <button data-prompt="Give me a short summary of the key points we have covered so far.">Summarize</button>
+  <button data-prompt="Create a short revision plan for this topic, broken into steps I can follow over a few days.">Revision plan</button>
+  <button id="quizBtn">Quiz me</button>
+</div>
     <div id="chat"></div>
     <div id="row">
       <input id="msg" placeholder="Ask or answer here...">
@@ -122,6 +134,111 @@
     }
     document.getElementById("send").onclick = send;
     msg.addEventListener("keydown", e => { if (e.key === "Enter") send(); });
+    // Simple modes: send a ready-made prompt
+document.querySelectorAll("#modes button[data-prompt]").forEach(b => {
+  b.onclick = () => ask(b.dataset.prompt);
+});
+
+// Quiz mode
+document.getElementById("quizBtn").onclick = startQuiz;
+
+async function startQuiz() {
+  const loading = addMessage("Preparing your quiz...", "ai");
+  try {
+    const res = await fetch("/api/quiz", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level, topic, count: 5 })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Server error");
+    }
+    const data = await res.json();
+    loading.remove();
+    runQuiz(data.questions);
+  } catch (err) {
+    loading.textContent = "Error: " + err.message;
+  }
+}
+
+function runQuiz(questions) {
+  let index = 0, score = 0;
+  const missed = [];
+  const card = document.createElement("div");
+  card.className = "quiz";
+  chat.appendChild(card);
+
+  function showQuestion() {
+    const q = questions[index];
+    card.innerHTML = "";
+
+    const title = document.createElement("p");
+    title.textContent = "Question " + (index + 1) + " of " + questions.length + ": " + q.question;
+    card.appendChild(title);
+
+    const feedback = document.createElement("p");
+
+    q.options.forEach((opt, i) => {
+      const btn = document.createElement("button");
+      btn.className = "opt";
+      btn.textContent = opt;
+      btn.onclick = () => {
+        const buttons = card.querySelectorAll(".opt");
+        buttons.forEach(b => b.disabled = true);
+        buttons[q.answer_index].classList.add("correct");
+
+        if (i === q.answer_index) {
+          score++;
+          feedback.textContent = "Correct! " + q.explanation;
+        } else {
+          btn.classList.add("wrong");
+          missed.push(q.question);
+          feedback.textContent = "Not quite. " + q.explanation;
+        }
+
+        const next = document.createElement("button");
+        next.textContent = index + 1 < questions.length ? "Next question" : "See score";
+        next.onclick = () => {
+          index++;
+          if (index < questions.length) showQuestion(); else finish();
+        };
+        card.appendChild(next);
+      };
+      card.appendChild(btn);
+    });
+
+    card.appendChild(feedback);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function finish() {
+    card.innerHTML = "";
+    const p = document.createElement("p");
+    p.textContent = "You scored " + score + " out of " + questions.length + ".";
+    card.appendChild(p);
+    saveResult(score, questions.length);
+
+    // Tell the tutor how it went so it can respond
+    let report = "I just finished a quiz on this topic and scored " + score +
+                 " out of " + questions.length + ".";
+    if (missed.length) {
+      report += " I got these questions wrong: " + missed.join(" | ") + ".";
+    }
+    report += " Give me short, encouraging feedback and help me revise what I missed.";
+    ask(report, true);
+  }
+
+  showQuestion();
+}
+
+function saveResult(score, total) {
+  try {
+    const all = JSON.parse(localStorage.getItem("quizResults") || "[]");
+    all.push({ level, topic, score, total, date: new Date().toISOString() });
+    localStorage.setItem("quizResults", JSON.stringify(all));
+  } catch (e) { /* storage unavailable, ignore */ }
+}
   </script>
 </body>
 </html>
