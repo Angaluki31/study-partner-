@@ -126,5 +126,7 @@ def flashcards(req: CardsRequest):
     if not cards:
         raise HTTPException(status_code=502, detail="Could not generate flashcards. Please try again.")
     return {"cards": cards}
-# Must stay last: serves the frontend
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+
+# Locally, FastAPI serves the frontend. On Vercel, the public/ folder is served by their CDN.
+if os.path.isdir("public"):
+    app.mount("/", StaticFiles(directory="public", html=True), name="public")
