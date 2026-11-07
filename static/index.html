@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Study Partner</title>
   <style>
+    .flash { border: 2px solid #0a58ca; border-radius: 8px; padding: 30px 12px;
+         text-align: center; cursor: pointer; min-height: 60px; margin: 8px 0; }
     #modes { display: flex; flex-wrap: wrap; gap: 6px; }
 #modes button { margin-top: 8px; }
 .quiz { border: 1px solid #ccc; border-radius: 6px; padding: 10px; margin: 8px 0; }
@@ -57,6 +59,7 @@
   <button data-prompt="Give me a short summary of the key points we have covered so far.">Summarize</button>
   <button data-prompt="Create a short revision plan for this topic, broken into steps I can follow over a few days.">Revision plan</button>
   <button id="quizBtn">Quiz me</button>
+  <button id="cardsBtn">Flashcards</button>
 </div>
     <div id="chat"></div>
     <div id="row">
@@ -238,6 +241,65 @@ function saveResult(score, total) {
     all.push({ level, topic, score, total, date: new Date().toISOString() });
     localStorage.setItem("quizResults", JSON.stringify(all));
   } catch (e) { /* storage unavailable, ignore */ }
+}
+
+// Flashcards mode
+document.getElementById("cardsBtn").onclick = startFlashcards;
+
+async function startFlashcards() {
+  const loading = addMessage("Preparing your flashcards...", "ai");
+  try {
+    const res = await fetch("/api/flashcards", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level, topic, count: 8 })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Server error");
+    }
+    const data = await res.json();
+    loading.remove();
+    runFlashcards(data.cards);
+  } catch (err) {
+    loading.textContent = "Error: " + err.message;
+  }
+}
+
+function runFlashcards(cards) {
+  let index = 0, showingBack = false;
+
+  const box = document.createElement("div");
+  box.className = "quiz";
+  const counter = document.createElement("p");
+  const face = document.createElement("div");
+  face.className = "flash";
+  const prevBtn = document.createElement("button");
+  prevBtn.textContent = "Previous";
+  const flipBtn = document.createElement("button");
+  flipBtn.textContent = "Flip";
+  const nextBtn = document.createElement("button");
+  nextBtn.textContent = "Next";
+  box.append(counter, face, prevBtn, flipBtn, nextBtn);
+  chat.appendChild(box);
+
+  function render() {
+    counter.textContent = "Card " + (index + 1) + " of " + cards.length +
+                          (showingBack ? " - Answer" : " - Question");
+    face.textContent = showingBack ? cards[index].back : cards[index].front;
+    prevBtn.disabled = index === 0;
+    nextBtn.disabled = index === cards.length - 1;
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function flip() { showingBack = !showingBack; render(); }
+
+  face.onclick = flip;
+  flipBtn.onclick = flip;
+  prevBtn.onclick = () => { index--; showingBack = false; render(); };
+  nextBtn.onclick = () => { index++; showingBack = false; render(); };
+
+  render();
 }
   </script>
 </body>

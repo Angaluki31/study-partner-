@@ -89,5 +89,42 @@ def quiz(req: QuizRequest):
         raise HTTPException(status_code=502, detail="Could not generate a valid quiz. Please try again.")
     return {"questions": questions}
 
+def ask_json(prompt: str) -> dict:
+    try:
+        response = client.chat.completions.create(
+            model=MODEL, messages=[{"role": "user", "content": prompt}]
+        )
+        text = response.choices[0].message.content
+        return json.loads(text[text.find("{"): text.rfind("}") + 1])
+    except Exception:
+        raise HTTPException(status_code=502, detail="Could not generate content. Please try again.")
+
+
+class CardsRequest(BaseModel):
+    level: str = Field(max_length=100)
+    topic: str = Field(max_length=200)
+    count: int = Field(default=8, ge=1, le=15)
+
+
+@app.post("/api/flashcards")
+def flashcards(req: CardsRequest):
+    prompt = (
+        f"Create {req.count} flashcards for a student at this level: {req.level}. "
+        f"Topic: {req.topic}.\n"
+        "Return ONLY valid JSON, with no extra text and no markdown fences, "
+        "in exactly this shape:\n"
+        '{"cards": [{"front": "a question or term", "back": "a short, clear answer"}]}\n'
+        "Keep each front and back brief. Cover the most important ideas of the topic."
+    )
+    data = ask_json(prompt)
+    cards = [
+        c for c in data.get("cards", [])
+        if isinstance(c, dict)
+        and isinstance(c.get("front"), str) and c["front"]
+        and isinstance(c.get("back"), str) and c["back"]
+    ]
+    if not cards:
+        raise HTTPException(status_code=502, detail="Could not generate flashcards. Please try again.")
+    return {"cards": cards}
 # Must stay last: serves the frontend
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
